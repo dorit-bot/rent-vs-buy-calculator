@@ -1,0 +1,57 @@
+{
+  "name": "rent-vs-buy-calculator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The TypeScript calculation engine behind Dorit’s Israeli rent-versus-buy calculator.",
+  "keywords": [
+    "rent-vs-buy",
+    "mortgage",
+    "calculator",
+    "israel",
+    "purchase-tax",
+    "real-estate",
+    "typescript"
+  ],
+  "homepage": "https://dorit.bot/rent-vs-buy",
+  "bugs": {
+    "url": "https://github.com/dorit-bot/rent-vs-buy-calculator/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dorit-bot/rent-vs-buy-calculator.git"
+  },
+  "license": "MIT",
+  "author": "Dorit <hello@dorit.bot> (https://dorit.bot)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.build.json",
+    "preexample": "npm run build",
+    "example": "node examples/basic.mjs",
+    "check": "npm run typecheck && npm test && npm run build",
+    "refresh:data": "npm run build && node scripts/refresh-calculator-data.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "fast-xml-parser": "5.11.2",
+    "fflate": "0.8.3"
+  }
+}
