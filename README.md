@@ -20,6 +20,9 @@ review the formulas and assumptions.
 - Purchase tax, VAT, broker fees, and the simplified single-home/additional-home land-appreciation
   tax model are defined in the source. Individual eligibility, exemptions, and tax circumstances
   are outside this model.
+- The single-home land-appreciation exemption ceiling is frozen through 2027. For a later sale the
+  model assumes it rises by the CPI assumption every 16 January, counted from the optional
+  `shared.startDate` (today by default). That is an assumption, not current law.
 - The first break-even year is the first sampled year-end when buying is ahead. A later reversal
   is reported separately. The headline treats a gap within the larger of ₪1,000 or 0.1% of the
   initial price as a tie. Break-even rent is solved numerically at the chosen horizon and may be null.

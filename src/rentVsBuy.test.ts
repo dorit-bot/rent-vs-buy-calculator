@@ -9,6 +9,7 @@ import {
   SINGLE_HOME_SHEVACH_EXEMPTION_CEILING,
   calculateRentVsBuy,
   rentVsBuyMortgage,
+  shevachCeilingAt,
   shevachTax,
   type RentVsBuyInput,
 } from './rentVsBuy.js';
@@ -218,5 +219,52 @@ describe('shevachTax', () => {
 
   it('owes nothing on a real loss', () => {
     expect(shevachTax(2_000_000, 50_000, 2_100_000, 'additionalHome')).toBe(0);
+  });
+
+  it('checks a single home against the ceiling it is given', () => {
+    expect(shevachTax(8_000_000, 0, 3_000_000, 'singleHome', 8_000_000)).toBe(0);
+  });
+});
+
+describe('shevachCeilingAt', () => {
+  const { value } = SINGLE_HOME_SHEVACH_EXEMPTION_CEILING;
+
+  it('stays frozen until the first update after the freeze', () => {
+    expect(shevachCeilingAt(new Date('2026-11-20T00:00:00Z'), 0.03)).toBe(value);
+    expect(shevachCeilingAt(new Date('2028-01-15T00:00:00Z'), 0.03)).toBe(value);
+  });
+
+  it('rises with inflation every 16 January from 2028', () => {
+    expect(shevachCeilingAt(new Date('2028-01-16T00:00:00Z'), 0.03)).toBeCloseTo(value * 1.03, 6);
+    expect(shevachCeilingAt(new Date('2030-06-01T00:00:00Z'), 0.03)).toBeCloseTo(value * 1.03 ** 3, 6);
+  });
+});
+
+describe('the projected מס שבח ceiling', () => {
+  // Fixed inflation and horizon, so a refresh of the market data's defaults never moves these.
+  const shared = { startDate: '2026-11-20', cpi: 0.025, horizonYears: 30 };
+
+  it('spares a default single home sold after 30 years, once the ceiling follows inflation', () => {
+    const result = calculateRentVsBuy(input({ shared }));
+    const finalValue = result.years.at(-1)!.propertyValue;
+
+    expect(finalValue).toBeGreaterThan(SINGLE_HOME_SHEVACH_EXEMPTION_CEILING.value);
+    expect(result.unrecoverable.buyer.shevachTax).toBe(0);
+  });
+
+  it('still taxes a home that outgrows the indexed ceiling', () => {
+    const result = calculateRentVsBuy(input({ buying: { price: 6_000_000 }, shared }));
+
+    expect(result.unrecoverable.buyer.shevachTax).toBeGreaterThan(0);
+  });
+
+  it('uses the frozen ceiling for a sale before 2028', () => {
+    const buying = { price: 6_000_000, appreciation: 0.1 };
+    const result = calculateRentVsBuy(input({ buying, shared: { ...shared, horizonYears: 1 } }));
+    const earlier = calculateRentVsBuy(input({ buying, shared: { ...shared, horizonYears: 1, startDate: '2025-11-20' } }));
+
+    expect(result.years.at(-1)!.propertyValue).toBeGreaterThan(SINGLE_HOME_SHEVACH_EXEMPTION_CEILING.value);
+    expect(result.unrecoverable.buyer.shevachTax).toBeGreaterThan(0);
+    expect(result.unrecoverable.buyer.shevachTax).toBeCloseTo(earlier.unrecoverable.buyer.shevachTax, 6);
   });
 });

@@ -32,9 +32,23 @@ export const PROPERTY_BROKER_FEE_SHARE = 0.02;
 export const REAL_GAIN_TAX_RATE = 0.25;
 /**
  * Sale value up to which selling one's only home is fully exempt from מס שבח (section 49א(א1)).
- * Frozen at its 2024 level for 2025–2027 instead of being indexed.
+ * Frozen at its 2024 level for 2025–2027 instead of being indexed. This is today's ceiling; a sale
+ * further out is checked against `shevachCeilingAt`.
  */
 export const SINGLE_HOME_SHEVACH_EXEMPTION_CEILING = { value: 5_008_000, frozenThrough: '2027-12-31' } as const;
+
+/**
+ * The single-home ceiling a sale on `saleDate` is checked against. The freeze is law; what follows
+ * it is this calculator's assumption: once the freeze ends the ceiling follows inflation again,
+ * rising by `cpi` every 16 January from its frozen level, without making up the frozen years.
+ */
+export function shevachCeilingAt(saleDate: Date, cpi: number): number {
+  const firstUpdateYear = Number(SINGLE_HOME_SHEVACH_EXEMPTION_CEILING.frozenThrough.slice(0, 4)) + 1;
+  const year = saleDate.getUTCFullYear();
+  const updatedThisYear = saleDate.getUTCMonth() > 0 || saleDate.getUTCDate() >= 16;
+  const updates = year < firstUpdateYear ? 0 : year - firstUpdateYear + (updatedThisYear ? 1 : 0);
+  return SINGLE_HOME_SHEVACH_EXEMPTION_CEILING.value * (1 + Math.max(-0.99, finiteOr(cpi, 0))) ** updates;
+}
 
 export type RentVsBuyBuyerKind = PurchaseTaxKind;
 
@@ -69,6 +83,11 @@ export interface RentVsBuyInput {
     cpi: number;
     boiRate: number;
     horizonYears: number;
+    /**
+     * Purchase date, `YYYY-MM-DD`; defaults to today. Only the projected מס שבח ceiling depends on
+     * it, since the ceiling is frozen until a fixed date.
+     */
+    startDate?: string;
   };
 }
 
@@ -258,13 +277,18 @@ export function shevachTax(
   sellingCosts: number,
   indexedBasis: number,
   kind: RentVsBuyBuyerKind,
+  ceiling: number = SINGLE_HOME_SHEVACH_EXEMPTION_CEILING.value,
 ): number {
   const realGain = Math.max(0, value - sellingCosts - indexedBasis);
   if (realGain === 0) return 0;
   if (kind === 'additionalHome') return realGain * REAL_GAIN_TAX_RATE;
-  const ceiling = SINGLE_HOME_SHEVACH_EXEMPTION_CEILING.value;
   if (value <= ceiling) return 0;
   return realGain * ((value - ceiling) / value) * REAL_GAIN_TAX_RATE;
+}
+
+function startDateOf(value: string | undefined): Date {
+  const parsed = value ? new Date(`${value.slice(0, 10)}T00:00:00Z`) : null;
+  return parsed && Number.isFinite(parsed.getTime()) ? parsed : new Date();
 }
 
 function afterTax(portfolio: number, basis: number): { value: number; tax: number } {
@@ -316,6 +340,7 @@ function simulate(
   const insuranceBase = Math.max(0, finiteOr(buying.monthlyInsurance, 0));
   const purchaseCosts = upfront.purchaseTax + upfront.lawyer + upfront.broker;
   const tolerance = tieTolerance(price);
+  const start = startDateOf(shared.startDate);
 
   const balanceAt = (month: number): number => (
     month === 0 ? mortgage.loanAmount : mortgage.months[month - 1]?.balance ?? 0
@@ -324,7 +349,9 @@ function simulate(
   const sale = (month: number, value: number) => {
     const sellingCosts = value * (lawyerShare + saleBrokerShare) * (1 + ISRAEL_VAT_RATE);
     const indexedBasis = (price + purchaseCosts) * monthlyCpi ** month;
-    const tax = shevachTax(value, sellingCosts, indexedBasis, buying.buyerKind);
+    const saleDate = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + month, start.getUTCDate()));
+    const ceiling = shevachCeilingAt(saleDate, finiteOr(shared.cpi, 0));
+    const tax = shevachTax(value, sellingCosts, indexedBasis, buying.buyerKind, ceiling);
     return { sellingCosts, tax, net: value - sellingCosts - tax - balanceAt(month) };
   };
 
