@@ -94,12 +94,17 @@ export const RENT_VS_BUY_DEFAULTS: RentVsBuyInput = {
   shared: {
     cpi: DEFAULT_CPI_RATE,
     boiRate: BANK_OF_ISRAEL_RATE.value,
-    horizonYears: 15,
+    horizonYears: 30,
   },
 };
 
 export const RENT_VS_BUY_MAX_HORIZON_YEARS = 40;
-export const RENT_VS_BUY_APPRECIATION_SHOCK = 0.02;
+/**
+ * Fixed home-price-growth scenarios shown beside the verdict, the default in the middle. They are
+ * fixed rather than relative to the visitor's assumption because the visitor can pick one: a row
+ * they tap stays where it was instead of re-centring the list.
+ */
+export const RENT_VS_BUY_APPRECIATION_SCENARIOS = [0.01, 0.03, 0.05] as const;
 /**
  * Fixed return scenarios shown beside the verdict. The default sits in the middle: 10% is the
  * S&P 500's long-run nominal average, 5% a cautious mixed portfolio, so a reader sees the verdict
@@ -203,10 +208,7 @@ export interface RentVsBuyResult {
   unrecoverable: RentVsBuyUnrecoverable;
   firstMonth: RentVsBuyFirstMonth;
   renterPortfolio: RentVsBuyRenterPortfolio;
-  appreciationSensitivity: {
-    lower: { appreciation: number; verdict: RentVsBuyVerdict };
-    higher: { appreciation: number; verdict: RentVsBuyVerdict };
-  };
+  appreciationSensitivity: Array<{ appreciation: number; verdict: RentVsBuyVerdict }>;
   returnSensitivity: Array<{ investmentReturn: number; verdict: RentVsBuyVerdict }>;
   notices: RentVsBuyNotice[];
   mortgage: MortgageResult;
@@ -497,11 +499,6 @@ export function calculateRentVsBuy(input: RentVsBuyInput): RentVsBuyResult {
   const main = simulate(input, mortgage, upfront, monthlyRent);
   const price = Math.max(0, finiteOr(input.buying.price, 0));
   const tolerance = tieTolerance(price);
-  const shiftedVerdict = (shift: number) => {
-    const appreciation = finiteOr(input.buying.appreciation, 0) + shift;
-    const shifted = { ...input, buying: { ...input.buying, appreciation } };
-    return { appreciation, verdict: simulate(shifted, mortgage, upfront, monthlyRent).verdict };
-  };
   const ltvNotice = mortgage.notices.find((notice) => notice.code === 'ltvAboveCap');
 
   return {
@@ -518,10 +515,15 @@ export function calculateRentVsBuy(input: RentVsBuyInput): RentVsBuyResult {
     unrecoverable: main.unrecoverable,
     firstMonth: main.firstMonth,
     renterPortfolio: main.renterPortfolio,
-    appreciationSensitivity: {
-      lower: shiftedVerdict(-RENT_VS_BUY_APPRECIATION_SHOCK),
-      higher: shiftedVerdict(RENT_VS_BUY_APPRECIATION_SHOCK),
-    },
+    appreciationSensitivity: RENT_VS_BUY_APPRECIATION_SCENARIOS.map((appreciation) => ({
+      appreciation,
+      verdict: simulate(
+        { ...input, buying: { ...input.buying, appreciation } },
+        mortgage,
+        upfront,
+        monthlyRent,
+      ).verdict,
+    })),
     returnSensitivity: RENT_VS_BUY_RETURN_SCENARIOS.map((investmentReturn) => ({
       investmentReturn,
       verdict: simulate(

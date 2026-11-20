@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { purchaseTax } from './purchaseTax.js';
 import {
   ISRAEL_VAT_RATE,
+  RENT_VS_BUY_APPRECIATION_SCENARIOS,
   RENT_VS_BUY_DEFAULTS,
   RENT_VS_BUY_RETURN_SCENARIOS,
   REAL_GAIN_TAX_RATE,
@@ -66,9 +67,11 @@ describe('calculateRentVsBuy', () => {
   });
 
   it('charges an additional home purchase tax and מס שבח that a single home avoids', () => {
-    const single = calculateRentVsBuy(input());
-    const additional = calculateRentVsBuy(input({ buying: { buyerKind: 'additionalHome', downPaymentShare: 0.5 } }));
-    const singleHalfDown = calculateRentVsBuy(input({ buying: { downPaymentShare: 0.5 } }));
+    // Fifteen years keeps the single home's sale value under the exemption ceiling.
+    const shared = { horizonYears: 15 };
+    const single = calculateRentVsBuy(input({ shared }));
+    const additional = calculateRentVsBuy(input({ buying: { buyerKind: 'additionalHome', downPaymentShare: 0.5 }, shared }));
+    const singleHalfDown = calculateRentVsBuy(input({ buying: { downPaymentShare: 0.5 }, shared }));
 
     expect(additional.upfront.purchaseTax).toBe(purchaseTax(2_500_000, 'additionalHome').total);
     expect(single.upfront.purchaseTax).toBe(purchaseTax(2_500_000, 'singleHome').total);
@@ -135,16 +138,28 @@ describe('calculateRentVsBuy', () => {
     expect(result.notices).toEqual([]);
   });
 
-  it('reports appreciation sensitivity around the base case', () => {
+  it('reports the verdict under each fixed price-growth scenario, with the default in the middle', () => {
     const result = calculateRentVsBuy(input());
-    const { lower, higher } = result.appreciationSensitivity;
+    const scenarios = result.appreciationSensitivity;
 
-    expect(lower.verdict.buyerWealth).toBeLessThan(result.verdict.buyerWealth);
-    expect(higher.verdict.buyerWealth).toBeGreaterThan(result.verdict.buyerWealth);
+    expect(scenarios.map(({ appreciation }) => appreciation)).toEqual([...RENT_VS_BUY_APPRECIATION_SCENARIOS]);
+    expect(scenarios[1]!.appreciation).toBe(RENT_VS_BUY_DEFAULTS.buying.appreciation);
+    expect(scenarios[1]!.verdict).toEqual(result.verdict);
+    const buyerWealth = scenarios.map(({ verdict }) => verdict.buyerWealth);
+    expect(buyerWealth[0]).toBeLessThan(buyerWealth[1]!);
+    expect(buyerWealth[1]).toBeLessThan(buyerWealth[2]!);
+  });
+
+  it('keeps the price-growth scenarios fixed whatever the visitor assumes', () => {
+    const result = calculateRentVsBuy(input({ buying: { appreciation: 0.04 } }));
+
+    expect(result.appreciationSensitivity.map(({ appreciation }) => appreciation)).toEqual([...RENT_VS_BUY_APPRECIATION_SCENARIOS]);
   });
 
   it('reports the verdict under each fixed return scenario, with the default in the middle', () => {
-    const result = calculateRentVsBuy(input());
+    // Within the mortgage term the buyer never has a surplus to invest, so the return moves only
+    // the renter's side; past it, the buyer invests too.
+    const result = calculateRentVsBuy(input({ shared: { horizonYears: 15 } }));
     const scenarios = result.returnSensitivity;
 
     expect(scenarios.map(({ investmentReturn }) => investmentReturn)).toEqual([...RENT_VS_BUY_RETURN_SCENARIOS]);
